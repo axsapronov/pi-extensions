@@ -31,18 +31,26 @@ export type CodeIntelligenceConfig = {
   generatedPaths: string[]
   testPaths: string[]
   embedding: {
-    model: string
-    fallbackModel: string
-    emergencyFallbackModel: string
-    autoDownload: boolean
+    provider: 'local' | 'openai-compatible' | 'disabled'
+    // Local-only fields (required for local, optional for others)
+    model?: string
+    fallbackModel?: string
+    emergencyFallbackModel?: string
+    autoDownload?: boolean
     batchSize: number
-    batchSizeByDevice: Partial<Record<'cpu' | 'gpu' | 'webgpu' | 'coreml' | 'cuda' | 'dml' | 'auto', number>>
-    maxConcurrentBatches: number
-    pauseWhenOnBattery: boolean
-    lowPriority: boolean
-    modelCacheDir: string
-    device: 'auto' | 'cpu' | 'gpu' | 'webgpu' | 'coreml' | 'cuda' | 'dml'
-    dtype: 'auto' | 'fp32' | 'fp16' | 'q8' | 'q4'
+    batchSizeByDevice?: Partial<Record<'cpu' | 'gpu' | 'webgpu' | 'coreml' | 'cuda' | 'dml' | 'auto', number>>
+    maxConcurrentBatches?: number
+    pauseWhenOnBattery?: boolean
+    lowPriority?: boolean
+    modelCacheDir?: string
+    device?: 'auto' | 'cpu' | 'gpu' | 'webgpu' | 'coreml' | 'cuda' | 'dml'
+    dtype?: 'auto' | 'fp32' | 'fp16' | 'q8' | 'q4'
+    // Remote-only fields
+    baseUrl?: string
+    apiKey?: string
+    dimensions?: number
+    timeoutMs?: number
+    maxRetries?: number
   }
   indexing: {
     scanConcurrency: number
@@ -108,6 +116,7 @@ export const DEFAULT_CONFIG: CodeIntelligenceConfig = {
   generatedPaths: ['src/generated/**', 'packages/**/src/generated/**'],
   testPaths: ['test/**', '**/*.test.ts', '**/*.spec.ts'],
   embedding: {
+    provider: 'local',
     model: 'onnx-community/bge-small-en-v1.5-ONNX',
     fallbackModel: 'onnx-community/bge-small-en-v1.5-ONNX',
     emergencyFallbackModel: 'onnx-community/bge-small-en-v1.5-ONNX',
@@ -190,6 +199,27 @@ function mergeStringArray(config: CodeIntelligenceConfig, key: 'include' | 'excl
 }
 
 function sanitizeEmbeddingConfig(value: CodeIntelligenceConfig['embedding']): CodeIntelligenceConfig['embedding'] {
+  const provider = value.provider === 'openai-compatible' || value.provider === 'disabled' ? value.provider : 'local'
+
+  if (provider === 'openai-compatible') {
+    return {
+      ...value,
+      provider: 'openai-compatible',
+      baseUrl: value.baseUrl ? String(value.baseUrl) : undefined,
+      model: value.model ? String(value.model) : undefined,
+      apiKey: value.apiKey ? String(value.apiKey) : undefined,
+      dimensions: value.dimensions ? clampInteger(value.dimensions, 1, 8192, 1024) : undefined,
+      batchSize: value.batchSize ? clampInteger(value.batchSize, 1, 512, 64) : 64,
+      timeoutMs: value.timeoutMs ? clampInteger(value.timeoutMs, 1000, 300000, 30000) : 30000,
+      maxRetries: value.maxRetries ? clampInteger(value.maxRetries, 0, 10, 3) : 3,
+    }
+  }
+
+  if (provider === 'disabled') {
+    return { provider: 'disabled' } as CodeIntelligenceConfig['embedding']
+  }
+
+  // Local provider (default)
   const rawBatchSizes = value.batchSizeByDevice && typeof value.batchSizeByDevice === 'object' ? value.batchSizeByDevice : {}
   const batchSizeByDevice = { ...DEFAULT_CONFIG.embedding.batchSizeByDevice }
   for (const device of ['cpu', 'gpu', 'webgpu', 'coreml', 'cuda', 'dml', 'auto'] as const) {
@@ -197,6 +227,7 @@ function sanitizeEmbeddingConfig(value: CodeIntelligenceConfig['embedding']): Co
   }
   return {
     ...value,
+    provider: 'local',
     batchSize: clampInteger(value.batchSize, 1, 512, DEFAULT_CONFIG.embedding.batchSize),
     batchSizeByDevice,
   }

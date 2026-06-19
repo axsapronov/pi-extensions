@@ -36,6 +36,7 @@ At a high level, the extension adds local code intelligence to Pi:
 This is the main feature I originally built the extension for. I was becoming sick of the push/fix/push/fix loop with AI review tools, so I built something based on what I know about how the best ones work.
 
 Running `/code-intelligence-review` will:
+
 - Identify changed files, either from unstaged, or the whole branch diff if there are no unstaged changes (or the whole repo if on `main`/`master`).
 - Retrieve relevant context for the changed files, including related files from the code graph, test counterparts, and relevant learnings.
 - Perform a structured review with severity-ranked findings, grouped by file and category, and provide an overall review summary with a readiness score.
@@ -54,6 +55,73 @@ Then reload Pi and enable code intelligence in a repo:
 /code-intelligence-doctor
 /enable-code-intelligence
 ```
+
+## Configuration (optional)
+
+Code intelligence can be configured per-repo via `.pi-code-intelligence.json` or `.pi/code-intelligence.json` in the repository root. Both paths are supported; if both exist, the second one overrides the first.
+
+```json
+{
+  "embedding": {
+    "provider": "local"
+  }
+}
+```
+
+### Embedding Provider
+
+By default, code intelligence uses a local ONNX embedding model (no network required). You can switch to a remote OpenAI-compatible provider or disable embeddings entirely:
+
+#### Local (default)
+
+Runs embeddings locally via `@huggingface/transformers`. No configuration required.
+
+```json
+{
+  "embedding": {
+    "provider": "local",
+    "model": "onnx-community/bge-small-en-v1.5-ONNX",
+    "batchSize": 32
+  }
+}
+```
+
+#### OpenAI-compatible
+
+Connects to any `/v1/embeddings` endpoint (OpenAI, Ollama, vLLM, etc.). The provider auto-detects embedding dimensions on first request unless `dimensions` is set explicitly.
+
+```json
+{
+  "embedding": {
+    "provider": "openai-compatible",
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "nomic-embed-text",
+    "apiKey": "",
+    "dimensions": 768,
+    "batchSize": 64,
+    "timeoutMs": 30000,
+    "maxRetries": 3
+  }
+}
+```
+
+#### Disabled
+
+Disables embeddings entirely; retrieval falls back to full-text search only.
+
+```json
+{
+  "embedding": {
+    "provider": "disabled"
+  }
+}
+```
+
+### Other options
+
+- `enabled: false` — disables code intelligence for the repo entirely.
+- `indexing.include` / `indexing.exclude` — glob patterns to control which files are indexed.
+
 ## Runtime dependencies
 
 This package is self-contained.
@@ -62,4 +130,3 @@ Optional integrations:
 
 - If a `subagent_run` tool is active, `/code-intelligence-review` will use it for batched review fan-out.
 - If `subagent_run` is not active, `/code-intelligence-review` automatically falls back to a direct single-agent review flow.
-

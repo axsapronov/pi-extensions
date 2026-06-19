@@ -6,6 +6,7 @@ import type { EmbeddingStatusValue } from '../../embeddings/EmbeddingService.ts'
 export function updateEmbeddingStatus(
   db: CodeIntelligenceDb,
   input: {
+    provider?: string
     status: EmbeddingStatusValue
     activeModel?: string
     activeDimensions?: number
@@ -24,7 +25,7 @@ export function updateEmbeddingStatus(
   const now = new Date().toISOString()
   const values = {
     id: 1,
-    provider: 'transformers',
+    provider: input.provider ?? 'transformers',
     activeModel: input.activeModel ?? null,
     activeDimensions: input.activeDimensions ?? null,
     activeDevice: input.activeDevice ?? null,

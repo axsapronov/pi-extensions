@@ -3,7 +3,7 @@ import type { CodeIntelligenceConfig } from '../config.ts'
 import { loadConfig } from '../config.ts'
 import type { CodeIntelligenceDb } from '../db/connection.ts'
 import { ensureSingletonStateRows, openCodeIntelligenceDb, upsertRepoMetadata } from '../db/connection.ts'
-import { TransformersEmbeddingService } from '../embeddings/transformersEmbeddingService.ts'
+import { createEmbeddingService } from '../embeddings/createEmbeddingService.ts'
 import type { CodeIntelligenceLogger } from '../logger.ts'
 import { CodeIntelligenceFileWatcher } from '../indexing/fileWatcher.ts'
 import { IndexScheduler } from '../indexing/indexScheduler.ts'
@@ -41,7 +41,7 @@ export async function activateCodeIntelligence(
   ensureSingletonStateRows(db, identity)
 
   const activatedAt = new Date().toISOString()
-  const embeddingService = new TransformersEmbeddingService(config, logger)
+  const embeddingService = createEmbeddingService(config, logger)
 
   const indexScheduler = new IndexScheduler({ identity, db, config, logger, embeddingService, dbStorageDir: storageDir })
   const fileWatcher = new CodeIntelligenceFileWatcher({
