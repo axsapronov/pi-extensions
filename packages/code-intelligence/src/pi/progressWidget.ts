@@ -77,12 +77,15 @@ export class CodeIntelligenceProgressWidget implements Component {
       progress: storedEmbeddingStatus?.download_progress ?? embeddingService?.downloadProgress,
     })
     if (downloadLine) bodyLines.push(` ○ ${downloadLine}`)
+    const workerActive = Boolean(indexStatus.workerPid)
     const backendLine = formatEmbeddingBackendLine({
-      kind: embeddingService?.kind ?? runtime.config.embedding.provider,
+      kind: resolveWidgetBackendKind(workerActive, storedEmbeddingStatus?.provider, embeddingService?.kind, runtime.config.embedding.provider),
       storedProvider: storedEmbeddingStatus?.provider,
       activeDevice: storedEmbeddingStatus?.active_device ?? embeddingService?.activeDevice,
       configuredDevice: runtime.config.embedding.provider === 'local' ? runtime.config.embedding.device : undefined,
-      modelId: storedEmbeddingStatus?.active_model ?? embeddingService?.modelId,
+      modelId: workerActive
+        ? storedEmbeddingStatus?.active_model ?? embeddingService?.modelId
+        : embeddingService?.modelId ?? storedEmbeddingStatus?.active_model,
     })
     if (backendLine) bodyLines.push(` ○ ${backendLine}`)
     const statusLine = formatEmbeddingStatusLine(embeddingStatus, embeddingStats.missingEmbeddings)
@@ -166,6 +169,18 @@ export function formatEmbeddingProviderLabel(
   if (resolved === 'openai-compatible') return 'remote (openai-compatible)'
   if (resolved === 'disabled') return 'disabled (FTS only)'
   return 'local (transformers)'
+}
+
+function resolveWidgetBackendKind(
+  workerActive: boolean,
+  storedProvider: string | undefined,
+  serviceKind: EmbeddingProviderKind | undefined,
+  configuredKind: EmbeddingProviderKind
+): EmbeddingProviderKind {
+  if (workerActive && storedProvider) {
+    return mapStoredEmbeddingProvider(storedProvider) ?? configuredKind
+  }
+  return serviceKind ?? configuredKind
 }
 
 function mapStoredEmbeddingProvider(provider?: string): EmbeddingProviderKind | undefined {

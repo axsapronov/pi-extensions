@@ -1,12 +1,12 @@
 import { openCodeIntelligenceDb, closeCodeIntelligenceDb } from '../db/connection.ts'
 import { updateEmbeddingStatus } from '../db/repositories/embeddingStatusRepo.ts'
-import { resolveModelCacheDir } from '../repo/storage.ts'
 import type { CodeIntelligenceConfig } from '../config.ts'
 import type { RepoIdentity } from '../repo/identifyRepo.ts'
 import { runFullRepoIndex, runIncrementalIndex } from './indexScheduler.ts'
-import { embedMissingChunksForRepo } from '../embeddings/embeddingIndexer.ts'
+import { embedMissingChunksForRepo, resolveEmbeddingCacheDir } from '../embeddings/embeddingIndexer.ts'
 import { refreshSimilarRelationshipsForRepo } from './similarRelationships.ts'
-import { TransformersEmbeddingService } from '../embeddings/transformersEmbeddingService.ts'
+import { createEmbeddingService } from '../embeddings/createEmbeddingService.ts'
+import type { EmbeddingService } from '../embeddings/EmbeddingService.ts'
 import type { CodeIntelligenceLogger } from '../logger.ts'
 
 type WorkerPayload = {
@@ -29,26 +29,31 @@ const logger = {
 
 const parentMonitor = startParentMonitor(parseParentPid())
 
+function syncEmbeddingStatus(db: Awaited<ReturnType<typeof openCodeIntelligenceDb>>, service: EmbeddingService): void {
+  updateEmbeddingStatus(db, {
+    provider: service.provider,
+    status: service.status,
+    activeModel: service.modelId,
+    activeDimensions: service.dimensions,
+    activeDevice: service.activeDevice,
+    downloadStatus: service.downloadStatus,
+    downloadFile: service.downloadFile,
+    downloadLoadedBytes: service.downloadLoadedBytes,
+    downloadTotalBytes: service.downloadTotalBytes,
+    downloadProgress: service.downloadProgress,
+    cacheDir: resolveEmbeddingCacheDir(service),
+    lastError: service.lastError,
+  })
+}
+
 async function main(): Promise<void> {
   const raw = process.env.PI_CODE_INTELLIGENCE_WORKER_PAYLOAD
   if (!raw) throw new Error('Missing PI_CODE_INTELLIGENCE_WORKER_PAYLOAD')
   const payload = JSON.parse(raw) as WorkerPayload
   const db = await openCodeIntelligenceDb(payload.storageDir)
   try {
-    const embeddingService = new TransformersEmbeddingService(payload.config, logger, (service) => {
-      updateEmbeddingStatus(db, {
-        status: service.status,
-        activeModel: service.modelId,
-        activeDimensions: service.dimensions,
-        activeDevice: service.activeDevice,
-        downloadStatus: service.downloadStatus,
-        downloadFile: service.downloadFile,
-        downloadLoadedBytes: service.downloadLoadedBytes,
-        downloadTotalBytes: service.downloadTotalBytes,
-        downloadProgress: service.downloadProgress,
-        cacheDir: resolveModelCacheDir(),
-        lastError: service.lastError,
-      })
+    const embeddingService = createEmbeddingService(payload.config, logger, (service) => {
+      syncEmbeddingStatus(db, service)
     })
     const common = { identity: payload.identity, db, config: payload.config, logger, embeddingService }
     const result = payload.job.kind === 'fullRepoIndex'

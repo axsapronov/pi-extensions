@@ -7,7 +7,8 @@ import { TransformersEmbeddingService } from './transformersEmbeddingService.ts'
 
 export function createEmbeddingService(
   config: CodeIntelligenceConfig,
-  logger: CodeIntelligenceLogger
+  logger: CodeIntelligenceLogger,
+  onStatusChange?: (service: EmbeddingService) => void
 ): EmbeddingService {
   const provider = config.embedding.provider
 
@@ -18,11 +19,11 @@ export function createEmbeddingService(
   if (provider === 'openai-compatible') {
     if (!config.embedding.baseUrl) {
       logger.warn('embedding provider is openai-compatible but baseUrl is missing; falling back to local')
-      return new TransformersEmbeddingService(config, logger)
+      return new TransformersEmbeddingService(config, logger, onStatusChange)
     }
     if (!config.embedding.model) {
       logger.warn('embedding provider is openai-compatible but model is missing; falling back to local')
-      return new TransformersEmbeddingService(config, logger)
+      return new TransformersEmbeddingService(config, logger, onStatusChange)
     }
     return new OpenAICompatibleEmbeddingService({
       type: 'openai-compatible',
@@ -37,5 +38,5 @@ export function createEmbeddingService(
   }
 
   // Default: local (transformers)
-  return new TransformersEmbeddingService(config, logger)
+  return new TransformersEmbeddingService(config, logger, onStatusChange)
 }

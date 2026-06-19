@@ -4,7 +4,7 @@ import { minimatch } from 'minimatch'
 import { closeCodeIntelligenceDb, openCodeIntelligenceDb } from '../db/connection.ts'
 import { retrieveHardRules } from '../db/repositories/rulesRepo.ts'
 import { findActiveFilePaths } from '../db/repositories/filesRepo.ts'
-import { TransformersEmbeddingService } from '../embeddings/transformersEmbeddingService.ts'
+import { createEmbeddingService } from '../embeddings/createEmbeddingService.ts'
 import { identifyRepo } from '../repo/identifyRepo.ts'
 import { isCodeIntelligenceEnabled } from '../repo/enabledRepos.ts'
 import { packageKeyForPath } from '../repo/packageDetection.ts'
@@ -117,7 +117,7 @@ export async function retrieveReviewCodeIntelligence(input: {
       const counterpartFiles = findSourceTestCounterparts(currentFiles, config)
       const packageKey = currentFiles.map((path) => packageKeyForPath(path, config)).find(Boolean)
       const query = buildReviewQuery({ scope: input.scope, focus, changedFiles })
-      const embeddingService = new TransformersEmbeddingService(config, new CodeIntelligenceLogger())
+      const embeddingService = createEmbeddingService(config, new CodeIntelligenceLogger())
       const maxCodeChunks = Math.max(config.maxCodeChunks, Math.max(24, currentFiles.length * 3))
       input.onProgress?.('retrieving code context')
       const codeContext = mergeRetrievedCodeChunks(

@@ -20,7 +20,7 @@ import {
 	type EmbeddingService,
 } from "./EmbeddingService.ts";
 
-function resolveCacheDir(service: EmbeddingService): string {
+export function resolveEmbeddingCacheDir(service: EmbeddingService): string {
 	if (service.kind === "openai-compatible") return "remote";
 	if (service.kind === "disabled") return "disabled";
 	return resolveModelCacheDir();
@@ -48,7 +48,7 @@ export async function embedMissingChunksForRepo(
 		downloadLoadedBytes: embeddingService.downloadLoadedBytes,
 		downloadTotalBytes: embeddingService.downloadTotalBytes,
 		downloadProgress: embeddingService.downloadProgress,
-		cacheDir: resolveCacheDir(embeddingService),
+		cacheDir: resolveEmbeddingCacheDir(embeddingService),
 		lastError: embeddingService.lastError,
 	});
 	if (
@@ -65,7 +65,7 @@ export async function embedMissingChunksForRepo(
 			activeModel: embeddingService.modelId,
 			activeDimensions: embeddingService.dimensions,
 			activeDevice: embeddingService.activeDevice,
-			cacheDir: resolveCacheDir(embeddingService),
+			cacheDir: resolveEmbeddingCacheDir(embeddingService),
 			lastError: embeddingService.lastError,
 		});
 		return 0;
@@ -97,7 +97,7 @@ export async function embedChunksIncremental(
 		downloadLoadedBytes: embeddingService.downloadLoadedBytes,
 		downloadTotalBytes: embeddingService.downloadTotalBytes,
 		downloadProgress: embeddingService.downloadProgress,
-		cacheDir: resolveCacheDir(embeddingService),
+		cacheDir: resolveEmbeddingCacheDir(embeddingService),
 		lastError: embeddingService.lastError,
 	});
 
@@ -116,7 +116,7 @@ export async function embedChunksIncremental(
 			activeModel: embeddingService.modelId,
 			activeDimensions: embeddingService.dimensions,
 			activeDevice: embeddingService.activeDevice,
-			cacheDir: resolveCacheDir(embeddingService),
+			cacheDir: resolveEmbeddingCacheDir(embeddingService),
 			lastError: embeddingService.lastError,
 		});
 		return 0;
@@ -170,7 +170,7 @@ export async function embedChunksIncremental(
 				activeDimensions: embeddingService.dimensions,
 				activeDevice: embeddingService.activeDevice,
 				...embeddingThroughput(embedded, pending.length, embeddingStartedAt),
-				cacheDir: resolveCacheDir(embeddingService),
+				cacheDir: resolveEmbeddingCacheDir(embeddingService),
 				lastError: (error as Error).message,
 			});
 			return embedded;
@@ -196,7 +196,7 @@ export async function embedChunksIncremental(
 			activeDimensions: embeddingService.dimensions,
 			activeDevice: embeddingService.activeDevice,
 			...embeddingThroughput(embedded, pending.length, embeddingStartedAt),
-			cacheDir: resolveCacheDir(embeddingService),
+			cacheDir: resolveEmbeddingCacheDir(embeddingService),
 			lastError: embeddingService.lastError,
 		});
 		await yieldToEventLoop();
@@ -209,7 +209,7 @@ export async function embedChunksIncremental(
 		activeDimensions: embeddingService.dimensions,
 		activeDevice: embeddingService.activeDevice,
 		...embeddingThroughput(embedded, pending.length, embeddingStartedAt),
-		cacheDir: resolveCacheDir(embeddingService),
+		cacheDir: resolveEmbeddingCacheDir(embeddingService),
 		lastError: embeddingService.lastError,
 	});
 
