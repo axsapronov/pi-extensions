@@ -43,6 +43,7 @@ function testConfig(overrides: Partial<CodeIntelligenceConfig> = {}): CodeIntell
 describe('gitignore-backed config', () => {
   it('loads repo-local review rules from config files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-review-config-'))
+    const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-agent-config-'))
     try {
       await writeFile(join(root, '.pi-code-intelligence.json'), JSON.stringify({
         review: {
@@ -51,25 +52,70 @@ describe('gitignore-backed config', () => {
           ],
         },
       }))
-      const config = await loadConfig(root)
+      const config = await loadConfig(root, { agentDir })
       assert.deepEqual(config.review.status.filesLoaded, ['.pi-code-intelligence.json'])
       assert.equal(config.review.rules[0]?.id, 'api-tests')
       assert.equal(config.review.rules[0]?.severity, 'warning')
     } finally {
       await rm(root, { recursive: true, force: true })
+      await rm(agentDir, { recursive: true, force: true })
+    }
+  })
+
+  it('loads global config from the Pi agent directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-global-config-repo-'))
+    const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-global-config-agent-'))
+    try {
+      await writeFile(join(agentDir, 'code-intelligence.json'), JSON.stringify({
+        embedding: {
+          provider: 'openai-compatible',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'nomic-embed-text',
+        },
+      }))
+      const config = await loadConfig(root, { agentDir })
+      assert.equal(config.embedding.provider, 'openai-compatible')
+      assert.equal(config.embedding.baseUrl, 'http://localhost:11434/v1')
+      assert.equal(config.embedding.model, 'nomic-embed-text')
+      assert.deepEqual(config.review.status.filesLoaded, [join(agentDir, 'code-intelligence.json')])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(agentDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lets repo-local config override global config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-config-override-repo-'))
+    const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-config-override-agent-'))
+    try {
+      await mkdir(join(root, '.pi'), { recursive: true })
+      await writeFile(join(agentDir, 'code-intelligence.json'), JSON.stringify({
+        embedding: { provider: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', model: 'nomic-embed-text' },
+      }))
+      await writeFile(join(root, '.pi/code-intelligence.json'), JSON.stringify({
+        embedding: { provider: 'disabled' },
+      }))
+      const config = await loadConfig(root, { agentDir })
+      assert.equal(config.embedding.provider, 'disabled')
+      assert.deepEqual(config.review.status.filesLoaded, [join(agentDir, 'code-intelligence.json'), '.pi/code-intelligence.json'])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(agentDir, { recursive: true, force: true })
     }
   })
 
   it('loads exclude patterns from repo .gitignore', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-config-'))
+    const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-config-agent-'))
     try {
       await writeFile(join(root, '.gitignore'), '# comment\nsessions/**\nsubagents/\n!keep-me.ts\n')
-      const config = await loadConfig(root)
+      const config = await loadConfig(root, { agentDir })
       assert(config.exclude.includes('sessions/**'))
       assert(config.exclude.includes('subagents/**'))
       assert.equal(config.exclude.includes('keep-me.ts'), false)
     } finally {
       await rm(root, { recursive: true, force: true })
+      await rm(agentDir, { recursive: true, force: true })
     }
   })
 })

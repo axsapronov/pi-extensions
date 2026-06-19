@@ -1,5 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { resolvePiAgentDir } from './repo/storage.ts'
+
+export type LoadConfigOptions = {
+  agentDir?: string
+}
 
 export type ReviewConfigRule = {
   id: string
@@ -162,36 +167,47 @@ export const DEFAULT_CONFIG: CodeIntelligenceConfig = {
   },
 }
 
-export async function loadConfig(repoRoot: string): Promise<CodeIntelligenceConfig> {
+export async function loadConfig(repoRoot: string, options: LoadConfigOptions = {}): Promise<CodeIntelligenceConfig> {
   const config = cloneDefaultConfig()
   const gitignorePatterns = await loadGitignoreExcludePatterns(repoRoot)
   if (gitignorePatterns.length > 0) {
     config.exclude = [...new Set([...config.exclude, ...gitignorePatterns])]
   }
+  const agentDir = options.agentDir ?? resolvePiAgentDir()
+  await applyConfigFile(config, join(agentDir, 'code-intelligence.json'), globalConfigSourceLabel(agentDir))
   await applyRepoLocalConfig(repoRoot, config)
   return config
 }
 
 async function applyRepoLocalConfig(repoRoot: string, config: CodeIntelligenceConfig): Promise<void> {
   for (const relativePath of ['.pi-code-intelligence.json', '.pi/code-intelligence.json']) {
-    try {
-      const content = await readFile(join(repoRoot, relativePath), 'utf8')
-      const parsed = JSON.parse(content) as Partial<CodeIntelligenceConfig> & { reviewRules?: ReviewConfigRule[] }
-      mergeStringArray(config, 'include', parsed.include)
-      mergeStringArray(config, 'exclude', parsed.exclude)
-      mergeStringArray(config, 'generatedPaths', parsed.generatedPaths)
-      mergeStringArray(config, 'testPaths', parsed.testPaths)
-      if (Array.isArray(parsed.packages)) config.packages = parsed.packages.filter((item) => item && typeof item.key === 'string' && typeof item.path === 'string')
-      if (parsed.embedding && typeof parsed.embedding === 'object') config.embedding = sanitizeEmbeddingConfig({ ...config.embedding, ...parsed.embedding })
-      if (parsed.indexing && typeof parsed.indexing === 'object') config.indexing = sanitizeIndexingConfig({ ...config.indexing, ...parsed.indexing })
-      if (parsed.review?.rules || parsed.reviewRules) config.review.rules = sanitizeReviewRules([...(parsed.review?.rules ?? []), ...(parsed.reviewRules ?? [])])
-      if (parsed.review?.modelRouting) config.review.modelRouting = sanitizeReviewModelRoutingConfig({ ...config.review.modelRouting, ...parsed.review.modelRouting })
-      config.review.status.filesLoaded.push(relativePath)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-      config.review.status.errors.push(`${relativePath}: ${(error as Error).message}`)
-    }
+    await applyConfigFile(config, join(repoRoot, relativePath), relativePath)
   }
+}
+
+async function applyConfigFile(config: CodeIntelligenceConfig, filePath: string, sourceLabel: string): Promise<void> {
+  try {
+    const content = await readFile(filePath, 'utf8')
+    const parsed = JSON.parse(content) as Partial<CodeIntelligenceConfig> & { reviewRules?: ReviewConfigRule[] }
+    mergeStringArray(config, 'include', parsed.include)
+    mergeStringArray(config, 'exclude', parsed.exclude)
+    mergeStringArray(config, 'generatedPaths', parsed.generatedPaths)
+    mergeStringArray(config, 'testPaths', parsed.testPaths)
+    if (Array.isArray(parsed.packages)) config.packages = parsed.packages.filter((item) => item && typeof item.key === 'string' && typeof item.path === 'string')
+    if (parsed.embedding && typeof parsed.embedding === 'object') config.embedding = sanitizeEmbeddingConfig({ ...config.embedding, ...parsed.embedding })
+    if (parsed.indexing && typeof parsed.indexing === 'object') config.indexing = sanitizeIndexingConfig({ ...config.indexing, ...parsed.indexing })
+    if (parsed.review?.rules || parsed.reviewRules) config.review.rules = sanitizeReviewRules([...(parsed.review?.rules ?? []), ...(parsed.reviewRules ?? [])])
+    if (parsed.review?.modelRouting) config.review.modelRouting = sanitizeReviewModelRoutingConfig({ ...config.review.modelRouting, ...parsed.review.modelRouting })
+    config.review.status.filesLoaded.push(sourceLabel)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    config.review.status.errors.push(`${sourceLabel}: ${(error as Error).message}`)
+  }
+}
+
+function globalConfigSourceLabel(agentDir: string): string {
+  const defaultAgentDir = resolvePiAgentDir()
+  return agentDir === defaultAgentDir ? '~/.pi/agent/code-intelligence.json' : join(agentDir, 'code-intelligence.json')
 }
 
 function mergeStringArray(config: CodeIntelligenceConfig, key: 'include' | 'exclude' | 'generatedPaths' | 'testPaths', value: unknown): void {

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { computeRepoKey } from '../repo/identifyRepo.ts'
 import { normalizeRemoteUrl } from '../repo/normalizeRemoteUrl.ts'
-import { resolveCodeIntelligenceDataDir, resolveRepoStorageDir, resolveXdgDataHome } from '../repo/storage.ts'
+import { resolveCodeIntelligenceDataDir, resolveGlobalCodeIntelligenceConfigPath, resolvePiAgentDir, resolveRepoStorageDir, resolveXdgDataHome } from '../repo/storage.ts'
 
 describe('normalizeRemoteUrl', () => {
   it('normalizes common GitHub remote URL forms to the same repo identity', () => {
@@ -56,5 +56,12 @@ describe('storage path resolution', () => {
     assert.equal(resolveXdgDataHome(env), expectedDataHome)
     assert.equal(resolveRepoStorageDir('abc123', env), join(expectedDataHome, 'pi-code-intelligence', 'repos', 'abc123'))
     assert(!resolveRepoStorageDir('abc123', env).includes('Application Support'))
+  })
+
+  it('resolves Pi agent directory and global code intelligence config path', () => {
+    const env = { PI_CODING_AGENT_DIR: '/tmp/custom-pi-agent' } as NodeJS.ProcessEnv
+    assert.equal(resolvePiAgentDir(env), '/tmp/custom-pi-agent')
+    assert.equal(resolveGlobalCodeIntelligenceConfigPath(env), '/tmp/custom-pi-agent/code-intelligence.json')
+    assert.equal(resolvePiAgentDir({} as NodeJS.ProcessEnv), join(homedir(), '.pi', 'agent'))
   })
 })

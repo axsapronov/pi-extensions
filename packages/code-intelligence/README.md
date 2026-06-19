@@ -58,17 +58,36 @@ Then reload Pi and enable code intelligence in a repo:
 
 ## Configuration (optional)
 
-Code intelligence can be configured per-repo via `.pi-code-intelligence.json` or `.pi/code-intelligence.json` in the repository root. Both paths are supported; if both exist, the second one overrides the first.
+Code intelligence merges settings from multiple sources (later sources override earlier ones):
+
+1. Built-in defaults
+2. Repo `.gitignore` exclude patterns
+3. Global `~/.pi/agent/code-intelligence.json`
+4. Repo `.pi-code-intelligence.json`
+5. Repo `.pi/code-intelligence.json`
+
+Global config follows Pi's agent directory layout (`~/.pi/agent`, overridable via `PI_CODING_AGENT_DIR` or `PI_AGENT_DIR`). Per-repo files in `.pi/` override global settings for that repository.
+
+Both repo paths are supported; if both exist, `.pi/code-intelligence.json` wins over `.pi-code-intelligence.json`.
+
+### Global config (all repos)
+
+Put shared settings (for example a remote embedding endpoint) in `~/.pi/agent/code-intelligence.json`:
 
 ```json
 {
   "embedding": {
-    "provider": "local"
+    "provider": "openai-compatible",
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "nomic-embed-text",
+    "batchSize": 64
   }
 }
 ```
 
-### Embedding Provider
+Repo-local `.pi/code-intelligence.json` can override any of these fields for a single project.
+
+### Per-repo config
 
 By default, code intelligence uses a local ONNX embedding model (no network required). You can switch to a remote OpenAI-compatible provider or disable embeddings entirely:
 
