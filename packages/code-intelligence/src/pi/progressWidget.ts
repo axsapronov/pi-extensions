@@ -14,7 +14,7 @@ type ProgressTheme = {
 import { getEmbeddingStats } from '../db/repositories/embeddingsRepo.ts'
 import { getEmbeddingStatus } from '../db/repositories/embeddingStatusRepo.ts'
 import { getIndexingState } from '../db/repositories/indexingStateRepo.ts'
-import type { EmbeddingService } from '../embeddings/EmbeddingService.ts'
+import type { EmbeddingProviderKind, EmbeddingService } from '../embeddings/EmbeddingService.ts'
 
 export class CodeIntelligenceProgressWidget implements Component {
   private cachedWidth?: number
@@ -77,8 +77,14 @@ export class CodeIntelligenceProgressWidget implements Component {
       progress: storedEmbeddingStatus?.download_progress ?? embeddingService?.downloadProgress,
     })
     if (downloadLine) bodyLines.push(` ○ ${downloadLine}`)
-    const deviceLine = formatEmbeddingDeviceLine(storedEmbeddingStatus?.active_device ?? embeddingService?.activeDevice, runtime.config.embedding.device, storedEmbeddingStatus?.active_model ?? embeddingService?.modelId)
-    if (deviceLine) bodyLines.push(` ○ ${deviceLine}`)
+    const backendLine = formatEmbeddingBackendLine({
+      kind: embeddingService?.kind ?? runtime.config.embedding.provider,
+      storedProvider: storedEmbeddingStatus?.provider,
+      activeDevice: storedEmbeddingStatus?.active_device ?? embeddingService?.activeDevice,
+      configuredDevice: runtime.config.embedding.provider === 'local' ? runtime.config.embedding.device : undefined,
+      modelId: storedEmbeddingStatus?.active_model ?? embeddingService?.modelId,
+    })
+    if (backendLine) bodyLines.push(` ○ ${backendLine}`)
     const statusLine = formatEmbeddingStatusLine(embeddingStatus, embeddingStats.missingEmbeddings)
     if (statusLine) bodyLines.push(` ○ ${statusLine}`)
 
@@ -125,11 +131,55 @@ export function formatEmbeddingStatusLine(embeddingStatus: string, missingEmbedd
   return `Status ${embeddingStatus}`
 }
 
+export function formatEmbeddingBackendLine(input: {
+  kind?: EmbeddingProviderKind
+  storedProvider?: string
+  activeDevice?: string | null
+  configuredDevice?: string
+  modelId?: string | null
+}): string | undefined {
+  const kind = input.kind ?? mapStoredEmbeddingProvider(input.storedProvider)
+  if (kind === 'disabled') return 'Provider disabled (FTS only)'
+  if (kind === 'openai-compatible') {
+    const model = formatRemoteModelName(input.modelId)
+    return model ? `Provider remote • ${model}` : 'Provider remote'
+  }
+  return formatEmbeddingDeviceLine(
+    input.activeDevice ?? undefined,
+    input.configuredDevice,
+    input.modelId
+  )
+}
+
 export function formatEmbeddingDeviceLine(activeDevice: string | undefined, configuredDevice: string | undefined, modelId?: string | null): string | undefined {
   const device = activeDevice || configuredDevice
   if (!device) return undefined
   const model = modelId ? ` • ${shortModelName(modelId)}` : ''
   return activeDevice ? `Device ${activeDevice}${model}` : `Device ${device} requested${model}`
+}
+
+export function formatEmbeddingProviderLabel(
+  kind?: EmbeddingProviderKind,
+  storedProvider?: string
+): string {
+  const resolved = kind ?? mapStoredEmbeddingProvider(storedProvider)
+  if (resolved === 'openai-compatible') return 'remote (openai-compatible)'
+  if (resolved === 'disabled') return 'disabled (FTS only)'
+  return 'local (transformers)'
+}
+
+function mapStoredEmbeddingProvider(provider?: string): EmbeddingProviderKind | undefined {
+  if (provider === 'openai-compatible') return 'openai-compatible'
+  if (provider === 'disabled') return 'disabled'
+  if (provider === 'transformers') return 'local'
+  return undefined
+}
+
+function formatRemoteModelName(modelId?: string | null): string | undefined {
+  if (!modelId) return undefined
+  const separator = modelId.indexOf('::')
+  if (separator >= 0) return modelId.slice(separator + 2) || undefined
+  return shortModelName(modelId)
 }
 
 export function formatEmbeddingThroughputLine(rate?: number | null, etaSeconds?: number | null): string | undefined {

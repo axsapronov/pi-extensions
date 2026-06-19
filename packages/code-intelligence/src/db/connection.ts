@@ -65,7 +65,17 @@ export function upsertRepoMetadata(db: CodeIntelligenceDb, identity: RepoIdentit
     .run()
 }
 
-export function ensureSingletonStateRows(db: CodeIntelligenceDb, identity: RepoIdentity): void {
+function resolveInitialEmbeddingProvider(provider: 'local' | 'openai-compatible' | 'disabled' = 'local'): string {
+  if (provider === 'openai-compatible') return 'openai-compatible'
+  if (provider === 'disabled') return 'disabled'
+  return 'transformers'
+}
+
+export function ensureSingletonStateRows(
+  db: CodeIntelligenceDb,
+  identity: RepoIdentity,
+  embeddingProvider: 'local' | 'openai-compatible' | 'disabled' = 'local'
+): void {
   const now = new Date().toISOString()
   db
     .insert(indexingState)
@@ -76,20 +86,21 @@ export function ensureSingletonStateRows(db: CodeIntelligenceDb, identity: RepoI
     })
     .run()
 
-  const existing = db.select({ id: embeddingStatus.id }).from(embeddingStatus).where(eq(embeddingStatus.id, 1)).get()
+  const provider = resolveInitialEmbeddingProvider(embeddingProvider)
+  const cacheDir = provider === 'transformers' ? resolveModelCacheDir() : provider
   db
     .insert(embeddingStatus)
     .values({
       id: 1,
-      provider: 'transformers',
-      status: existing ? 'not_started' : 'not_started',
-      cacheDir: resolveModelCacheDir(),
+      provider,
+      status: 'not_started',
+      cacheDir,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: embeddingStatus.id,
-      set: { provider: 'transformers', cacheDir: resolveModelCacheDir(), updatedAt: now },
+      set: { cacheDir, updatedAt: now },
     })
     .run()
 }

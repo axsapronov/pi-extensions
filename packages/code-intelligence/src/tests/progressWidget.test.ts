@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { DEFAULT_CONFIG } from '../config.ts'
 import { openCodeIntelligenceDb } from '../db/connection.ts'
-import { CodeIntelligenceProgressWidget, formatEmbeddingDeviceLine, formatEmbeddingDownloadLine, formatEmbeddingStatusLine, formatEmbeddingThroughputLine, formatFileProgress, isEmbeddingWorkVisible, isFileWorkVisible } from '../pi/progressWidget.ts'
+import { CodeIntelligenceProgressWidget, formatEmbeddingBackendLine, formatEmbeddingDeviceLine, formatEmbeddingDownloadLine, formatEmbeddingProviderLabel, formatEmbeddingStatusLine, formatEmbeddingThroughputLine, formatFileProgress, isEmbeddingWorkVisible, isFileWorkVisible } from '../pi/progressWidget.ts'
 
 describe('code intelligence progress widget', () => {
   it('does not show incremental changed-file progress as a fraction of the whole repo', () => {
@@ -39,6 +39,13 @@ describe('code intelligence progress widget', () => {
     assert.equal(formatEmbeddingDeviceLine('coreml', 'cpu', 'jinaai/jina-embeddings-v2-base-code'), 'Device coreml • jina-embeddings-v2-base-code')
     assert.equal(formatEmbeddingDeviceLine(undefined, 'coreml', 'Xenova/all-MiniLM-L6-v2'), 'Device coreml requested • all-MiniLM-L6-v2')
     assert.equal(formatEmbeddingDeviceLine(undefined, undefined), undefined)
+  })
+
+  it('shows embedding provider in backend line', () => {
+    assert.equal(formatEmbeddingBackendLine({ kind: 'openai-compatible', modelId: 'http://localhost:11434/v1::nomic-embed-text' }), 'Provider remote • nomic-embed-text')
+    assert.equal(formatEmbeddingBackendLine({ kind: 'disabled' }), 'Provider disabled (FTS only)')
+    assert.equal(formatEmbeddingBackendLine({ kind: 'local', activeDevice: 'cpu', modelId: 'onnx-community/bge-small-en-v1.5-ONNX' }), 'Device cpu • bge-small-en-v1.5-ONNX')
+    assert.equal(formatEmbeddingProviderLabel('openai-compatible'), 'remote (openai-compatible)')
   })
 
   it('shows embedding download progress with size', () => {

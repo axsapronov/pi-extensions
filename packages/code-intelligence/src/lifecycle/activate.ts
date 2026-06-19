@@ -38,7 +38,7 @@ export async function activateCodeIntelligence(
 
   const db = await openCodeIntelligenceDb(storageDir)
   upsertRepoMetadata(db, identity)
-  ensureSingletonStateRows(db, identity)
+  ensureSingletonStateRows(db, identity, config.embedding.provider)
 
   const activatedAt = new Date().toISOString()
   const embeddingService = createEmbeddingService(config, logger)

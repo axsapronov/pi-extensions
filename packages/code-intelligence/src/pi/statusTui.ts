@@ -10,6 +10,7 @@ import { listLearnings } from '../db/repositories/learningsRepo.ts'
 import { getMachineRuleStats } from '../db/repositories/rulesRepo.ts'
 import type { EnabledRepoRecord } from '../repo/enabledRepos.ts'
 import type { EmbeddingService } from '../embeddings/EmbeddingService.ts'
+import { formatEmbeddingProviderLabel } from './progressWidget.ts'
 
 export class CodeIntelligenceDashboardComponent {
   private cachedWidth?: number
@@ -70,7 +71,8 @@ export class CodeIntelligenceDashboardComponent {
       lines.push('')
       lines.push(section('Embeddings'))
       const embeddingService = runtime.services.get<EmbeddingService>('embeddingService')
-      lines.push(`Status: ${embeddingStatus?.status ?? 'not_started'}    Model: ${embeddingStatus?.active_model ?? '(none)'}    Device: ${embeddingService?.activeDevice ?? '(auto/cpu pending)'}`)
+      lines.push(`Provider: ${formatEmbeddingProviderLabel(embeddingService?.kind ?? runtime.config.embedding.provider, embeddingStatus?.provider)}    Status: ${embeddingStatus?.status ?? 'not_started'}`)
+      lines.push(`Model: ${embeddingStatus?.active_model ?? embeddingService?.modelId ?? '(none)'}    Device: ${embeddingService?.activeDevice ?? (runtime.config.embedding.provider === 'local' ? '(auto/cpu pending)' : '(n/a)')}`)
       lines.push(`Embedded chunks: ${embeddingStats.embeddedChunks}/${embeddingStats.totalEmbeddableChunks}    Missing: ${embeddingStats.missingEmbeddings}    Stale: ${embeddingStats.staleEmbeddings ?? 0}`)
       lines.push(`Last embedded: ${embeddingStats.lastEmbeddedAt ?? '(never)'}`)
       lines.push('')
