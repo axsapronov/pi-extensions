@@ -6,6 +6,7 @@ import { describe, it } from 'node:test'
 import {
   disableCodeIntelligenceRepo,
   enableCodeIntelligenceRepo,
+  ensureCodeIntelligenceRepoEnabled,
   getEnabledRepoRecord,
   isCodeIntelligenceEnabled,
   resolveEnabledReposDbPath,
@@ -39,6 +40,29 @@ describe('code intelligence enablement state', () => {
       assert.equal(await disableCodeIntelligenceRepo(identity.repoKey, env), true)
       assert.equal(await isCodeIntelligenceEnabled(identity.repoKey, env), false)
       assert.equal(await disableCodeIntelligenceRepo(identity.repoKey, env), false)
+    } finally {
+      await rm(temp, { recursive: true, force: true })
+    }
+  })
+
+  it('auto-enables repos when autoEnable is true', async () => {
+    const temp = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-auto-enable-test-'))
+    const env = { XDG_DATA_HOME: temp } as NodeJS.ProcessEnv
+
+    try {
+      const identity: RepoIdentity = {
+        repoKey: 'repo-auto',
+        gitRoot: '/workspace/auto',
+        identitySource: 'path',
+      }
+
+      assert.equal(await ensureCodeIntelligenceRepoEnabled(identity, false, env), 'disabled')
+      assert.equal(await isCodeIntelligenceEnabled(identity.repoKey, env), false)
+
+      assert.equal(await ensureCodeIntelligenceRepoEnabled(identity, true, env), 'auto-enabled')
+      assert.equal(await isCodeIntelligenceEnabled(identity.repoKey, env), true)
+
+      assert.equal(await ensureCodeIntelligenceRepoEnabled(identity, true, env), 'already-enabled')
     } finally {
       await rm(temp, { recursive: true, force: true })
     }

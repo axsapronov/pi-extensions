@@ -46,6 +46,17 @@ export async function listEnabledRepoRecords(env: NodeJS.ProcessEnv = process.en
   }
 }
 
+export async function ensureCodeIntelligenceRepoEnabled(
+  identity: RepoIdentity,
+  autoEnable: boolean,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<'already-enabled' | 'auto-enabled' | 'disabled'> {
+  if (await isCodeIntelligenceEnabled(identity.repoKey, env)) return 'already-enabled'
+  if (!autoEnable) return 'disabled'
+  await enableCodeIntelligenceRepo(identity, env)
+  return 'auto-enabled'
+}
+
 export async function enableCodeIntelligenceRepo(
   identity: RepoIdentity,
   env: NodeJS.ProcessEnv = process.env

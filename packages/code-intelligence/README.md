@@ -76,6 +76,7 @@ Put shared settings (for example a remote embedding endpoint) in `~/.pi/agent/co
 
 ```json
 {
+  "autoEnable": true,
   "embedding": {
     "provider": "openai-compatible",
     "baseUrl": "http://localhost:11434/v1",
@@ -85,7 +86,9 @@ Put shared settings (for example a remote embedding endpoint) in `~/.pi/agent/co
 }
 ```
 
-Repo-local `.pi/code-intelligence.json` can override any of these fields for a single project.
+With `autoEnable: true`, code intelligence enables itself on session start (same effect as `/enable-code-intelligence`) and begins indexing. Default is `false` — enable manually once per repo, or set `autoEnable` globally.
+
+Repo-local `.pi/code-intelligence.json` can override any of these fields for a single project (for example `"autoEnable": false` to opt out).
 
 ### Per-repo config
 
@@ -138,7 +141,7 @@ Disables embeddings entirely; retrieval falls back to full-text search only.
 
 ### Other options
 
-- `enabled: false` — disables code intelligence for the repo entirely.
+- `autoEnable` — when `true`, enable code intelligence automatically on session start (default `false`).
 - `indexing.include` / `indexing.exclude` — glob patterns to control which files are indexed.
 
 ## Runtime dependencies

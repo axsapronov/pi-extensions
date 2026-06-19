@@ -30,6 +30,7 @@ export type ReviewModelRoutingConfig = {
 }
 
 export type CodeIntelligenceConfig = {
+  autoEnable: boolean
   include: string[]
   exclude: string[]
   packages: Array<{ key: string; path: string }>
@@ -115,6 +116,7 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 ]
 
 export const DEFAULT_CONFIG: CodeIntelligenceConfig = {
+  autoEnable: false,
   include: ['**/*'],
   exclude: [...DEFAULT_EXCLUDE_PATTERNS],
   packages: [],
@@ -194,6 +196,7 @@ async function applyConfigFile(config: CodeIntelligenceConfig, filePath: string,
     mergeStringArray(config, 'generatedPaths', parsed.generatedPaths)
     mergeStringArray(config, 'testPaths', parsed.testPaths)
     if (Array.isArray(parsed.packages)) config.packages = parsed.packages.filter((item) => item && typeof item.key === 'string' && typeof item.path === 'string')
+    if (typeof parsed.autoEnable === 'boolean') config.autoEnable = parsed.autoEnable
     if (parsed.embedding && typeof parsed.embedding === 'object') config.embedding = sanitizeEmbeddingConfig({ ...config.embedding, ...parsed.embedding })
     if (parsed.indexing && typeof parsed.indexing === 'object') config.indexing = sanitizeIndexingConfig({ ...config.indexing, ...parsed.indexing })
     if (parsed.review?.rules || parsed.reviewRules) config.review.rules = sanitizeReviewRules([...(parsed.review?.rules ?? []), ...(parsed.reviewRules ?? [])])

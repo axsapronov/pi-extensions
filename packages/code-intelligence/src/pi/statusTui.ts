@@ -56,6 +56,7 @@ export class CodeIntelligenceDashboardComponent {
 
       lines.push(`Project: ${runtime.identity.gitRoot}`)
       lines.push(`Repo key: ${runtime.identity.repoKey}`)
+      lines.push(`Auto enable: ${runtime.config.autoEnable ? 'yes' : 'no'}`)
       lines.push(`Storage: ${runtime.storageDir}`)
       lines.push('')
       lines.push(section('Indexing'))

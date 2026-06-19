@@ -104,6 +104,32 @@ describe('gitignore-backed config', () => {
     }
   })
 
+  it('defaults autoEnable to false', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-auto-enable-default-'))
+    const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-auto-enable-default-agent-'))
+    try {
+      const config = await loadConfig(root, { agentDir })
+      assert.equal(config.autoEnable, false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(agentDir, { recursive: true, force: true })
+    }
+  })
+
+  it('loads autoEnable from global and repo-local config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-auto-enable-'))
+    const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-auto-enable-agent-'))
+    try {
+      await writeFile(join(agentDir, 'code-intelligence.json'), JSON.stringify({ autoEnable: true }))
+      await writeFile(join(root, '.pi-code-intelligence.json'), JSON.stringify({ autoEnable: false }))
+      const config = await loadConfig(root, { agentDir })
+      assert.equal(config.autoEnable, false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(agentDir, { recursive: true, force: true })
+    }
+  })
+
   it('loads exclude patterns from repo .gitignore', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-config-'))
     const agentDir = await mkdtemp(join(tmpdir(), 'pi-code-intelligence-config-agent-'))

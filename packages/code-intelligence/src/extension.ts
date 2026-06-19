@@ -22,7 +22,8 @@ import {
 } from './db/repositories/maintenanceRepo.ts'
 import { retrieveHardRules } from './db/repositories/rulesRepo.ts'
 import { CodeIntelligenceLogger } from './logger.ts'
-import { enableCodeIntelligenceRepo, disableCodeIntelligenceRepo, isCodeIntelligenceEnabled, listEnabledRepoRecords } from './repo/enabledRepos.ts'
+import { loadConfig } from './config.ts'
+import { enableCodeIntelligenceRepo, disableCodeIntelligenceRepo, ensureCodeIntelligenceRepoEnabled, isCodeIntelligenceEnabled, listEnabledRepoRecords } from './repo/enabledRepos.ts'
 import { identifyRepo, type RepoIdentity } from './repo/identifyRepo.ts'
 import { captureCorrectionLearning, createOrReuseLearning } from './pi/correctionCapture.ts'
 import { scopeLearningCandidate } from './learnings/scopeLearning.ts'
@@ -497,13 +498,22 @@ export default function codeIntelligenceExtension(pi: ExtensionAPI) {
   pi.on('session_start', async (_event, ctx) => {
     try {
       currentIdentity = await identifyRepo(ctx.cwd)
-      if (!(await isCodeIntelligenceEnabled(currentIdentity.repoKey))) {
+      const config = await loadConfig(currentIdentity.gitRoot)
+      const enablement = await ensureCodeIntelligenceRepoEnabled(currentIdentity, config.autoEnable)
+      if (enablement === 'disabled') {
         logger.info('disabled for repo; use /enable-code-intelligence to enable', {
           repoKey: currentIdentity.repoKey,
           gitRoot: currentIdentity.gitRoot,
+          autoEnable: config.autoEnable,
         })
         if (ctx.hasUI) ctx.ui.setStatus('code-intelligence', 'intelligence: disabled')
         return
+      }
+      if (enablement === 'auto-enabled') {
+        logger.info('auto-enabled from config', {
+          repoKey: currentIdentity.repoKey,
+          gitRoot: currentIdentity.gitRoot,
+        })
       }
 
       runtime = await activateCodeIntelligence(ctx.cwd, logger, currentIdentity)
