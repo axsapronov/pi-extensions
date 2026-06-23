@@ -45,7 +45,7 @@ Running `/code-intelligence-review` will:
 ## Install from npm
 
 ```bash
-pi install npm:@catdaemon/pi-code-intelligence
+pi install npm:pi-codeontime-code-intelligence
 ```
 
 Then reload Pi and enable code intelligence in a repo:

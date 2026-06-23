@@ -1,17 +1,17 @@
 {
-  "name": "@catdaemon/pi-code-intelligence",
-  "version": "0.1.9",
+  "name": "pi-codeontime-code-intelligence",
+  "version": "0.2.0",
   "description": "Local codebase graph, semantic search, repo learnings, and review tools for Pi.",
   "type": "module",
   "keywords": ["pi-package", "pi", "code-intelligence", "code-review", "semantic-search"],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Catdaemon/pi-extensions",
+    "url": "https://github.com/axsapronov/pi-extensions",
     "directory": "packages/code-intelligence"
   },
-  "homepage": "https://github.com/Catdaemon/pi-extensions/tree/main/packages/code-intelligence#readme",
-  "bugs": { "url": "https://github.com/Catdaemon/pi-extensions/issues" },
+  "homepage": "https://github.com/axsapronov/pi-extensions/tree/main/packages/code-intelligence#readme",
+  "bugs": { "url": "https://github.com/axsapronov/pi-extensions/issues" },
   "pi": { "extensions": ["./dist/index.ts"] },
   "files": ["dist", "README.md", "LICENSE", "package.json", "tsconfig.json"],
   "scripts": {
