@@ -1832,7 +1832,11 @@ function updateProgressStatus(ctx: any, runtime: CodeIntelligenceRuntime | undef
   const dbEmbeddingStatus = getEmbeddingStatus(runtime.db)
   const embeddingStatus = dbEmbeddingStatus?.status ?? embeddingService?.status ?? 'not_started'
   const busy = Boolean(indexStatus.workerPid) || indexStatus.running || indexStatus.queuedJobs > 0 || !['ready', 'fts_only', 'failed'].includes(embeddingStatus)
-  const value = busy ? 'intelligence: active' : undefined
+  const value = indexStatus.degradedWarning
+    ? 'intelligence: disabled (sqlite module unavailable)'
+    : busy
+      ? 'intelligence: active'
+      : undefined
   if (progressUiState.progressTimer?.lastStatus === value) return
   if (progressUiState.progressTimer) progressUiState.progressTimer.lastStatus = value
   ctx.ui.setStatus('code-intelligence', value)

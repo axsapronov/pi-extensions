@@ -20,6 +20,21 @@ type WorkerPayload = {
     | { kind: 'embeddingBackfill'; reason: string }
 }
 
+type WorkerResult =
+  | {
+      ok: true
+      kind: WorkerPayload['job']['kind']
+      result: unknown
+      backfilledEmbeddings: number
+      similarRelationships: number
+      degraded?: boolean
+      warning?: string
+    }
+  | {
+      ok: false
+      error: string
+    }
+
 const logger = {
   debug(message: string, details?: unknown) { writeLog('debug', message, details) },
   info(message: string, details?: unknown) { writeLog('info', message, details) },
@@ -50,7 +65,28 @@ async function main(): Promise<void> {
   const raw = process.env.PI_CODE_INTELLIGENCE_WORKER_PAYLOAD
   if (!raw) throw new Error('Missing PI_CODE_INTELLIGENCE_WORKER_PAYLOAD')
   const payload = JSON.parse(raw) as WorkerPayload
-  const db = await openCodeIntelligenceDb(payload.storageDir)
+  let db: Awaited<ReturnType<typeof openCodeIntelligenceDb>> | undefined
+  try {
+    db = await openCodeIntelligenceDb(payload.storageDir)
+  } catch (error) {
+    const message = (error as Error).message
+    if (isSqliteNativeBindingError(message)) {
+      const warning = `SQLite native binding is unavailable (${message}). Indexing is skipped for this session.`
+      writeLog('warn', warning, { storageDir: payload.storageDir, job: payload.job.kind })
+      const result: WorkerResult = {
+        ok: true,
+        kind: payload.job.kind,
+        result: payload.job.kind === 'fullRepoIndex' ? emptyFullResult() : emptyIncrementalResult(),
+        backfilledEmbeddings: 0,
+        similarRelationships: 0,
+        degraded: true,
+        warning,
+      }
+      process.stdout.write(`${JSON.stringify(result)}\n`)
+      return
+    }
+    throw error
+  }
   try {
     const embeddingService = createEmbeddingService(payload.config, logger, (service) => {
       syncEmbeddingStatus(db, service)
@@ -74,10 +110,41 @@ async function main(): Promise<void> {
     )
     result.embeddingsIndexed += backfilledEmbeddings
     const similarRelationships = backfilledEmbeddings > 0 ? refreshSimilarRelationshipsForRepo(db, payload.identity.repoKey) : 0
-    process.stdout.write(`${JSON.stringify({ ok: true, kind: payload.job.kind, result, backfilledEmbeddings, similarRelationships })}\n`)
+    const workerResult: WorkerResult = { ok: true, kind: payload.job.kind, result, backfilledEmbeddings, similarRelationships }
+    process.stdout.write(`${JSON.stringify(workerResult)}\n`)
   } finally {
     parentMonitor?.stop()
     closeCodeIntelligenceDb(db)
+  }
+}
+
+function emptyFullResult() {
+  const now = new Date().toISOString()
+  return {
+    scanned: 0,
+    insertedOrChanged: 0,
+    skippedUnchanged: 0,
+    deleted: 0,
+    generated: 0,
+    chunksIndexed: 0,
+    embeddingsIndexed: 0,
+    summary: {
+      scanned: 0,
+      ignoredByDefault: 0,
+      ignoredByPatterns: 0,
+      ignoredByGenerated: 0,
+      ignoredBySize: 0,
+      ignoredByBinary: 0,
+      ignoredByDirectory: 0,
+      ignoredByNodeModules: 0,
+      ignoredByDistArtifacts: 0,
+      ignoredByPathSegment: 0,
+      excludedByAllowlist: 0,
+      excludedByDenylist: 0,
+      unsupportedLanguage: 0,
+    },
+    startedAt: now,
+    completedAt: now,
   }
 }
 
@@ -93,6 +160,13 @@ function emptyIncrementalResult() {
     startedAt: now,
     completedAt: now,
   }
+}
+
+function isSqliteNativeBindingError(message: string): boolean {
+  const normalized = String(message ?? '')
+  return normalized.includes('Could not locate the bindings file') ||
+    normalized.includes('better_sqlite3.node') ||
+    normalized.includes('better-sqlite3')
 }
 
 function writeLog(level: string, message: string, details?: unknown): void {

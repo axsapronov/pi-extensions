@@ -1,6 +1,6 @@
 {
   "name": "pi-codeontime-code-intelligence",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local codebase graph, semantic search, repo learnings, and review tools for Pi.",
   "type": "module",
   "keywords": ["pi-package", "pi", "code-intelligence", "code-review", "semantic-search"],

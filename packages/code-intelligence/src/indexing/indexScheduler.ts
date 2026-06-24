@@ -141,6 +141,7 @@ export class IndexScheduler {
   private externalWorkerPid: number | undefined
   private lastEmbeddingBackfillEnqueueAt = 0
   private workerStartLockHeld = false
+  private degradedWarning: string | undefined
 
   constructor(
     private readonly options: {
@@ -245,6 +246,7 @@ export class IndexScheduler {
       currentJobKind: this.currentJobKind,
       lastFullIndexResult: this.lastFullIndexResult,
       lastIncrementalIndexResult: this.lastIncrementalIndexResult,
+      degradedWarning: this.degradedWarning,
       stats,
     }
   }
@@ -319,8 +321,24 @@ export class IndexScheduler {
           if (signal && this.stopped) return resolve(job.kind === 'fullRepoIndex' ? emptyFullIndexResult() : emptyIncrementalIndexResult())
           if (!last) return reject(new Error(`Index worker exited without result (code ${code}, signal ${signal}): ${stderr.slice(-1000)}`))
           try {
-            const parsed = JSON.parse(last) as { ok: boolean; error?: string; result?: FullIndexResult | IncrementalIndexResult }
+            const parsed = JSON.parse(last) as {
+              ok: boolean
+              error?: string
+              result?: FullIndexResult | IncrementalIndexResult
+              degraded?: boolean
+              warning?: string
+            }
             if (!parsed.ok || !parsed.result) return reject(new Error(parsed.error ?? `Index worker failed with code ${code}`))
+            if (parsed.degraded && parsed.warning) {
+              this.degradedWarning = parsed.warning
+              this.options.logger.warn('index worker degraded mode', {
+                repoKey: this.options.identity.repoKey,
+                warning: parsed.warning,
+                kind: job.kind,
+              })
+            } else if (this.degradedWarning) {
+              this.degradedWarning = undefined
+            }
             resolve(parsed.result)
           } catch (error) {
             reject(new Error(`Failed to parse index worker result: ${(error as Error).message}; stderr: ${stderr.slice(-1000)}`))
