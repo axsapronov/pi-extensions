@@ -43,7 +43,14 @@ export class CodeIntelligenceProgressWidget implements Component {
     const embeddingStatus = storedEmbeddingStatus?.status ?? embeddingService?.status ?? 'not_started'
     const embeddingStats = getEmbeddingStats(runtime.db, runtime.identity.repoKey)
     const indexingState = getIndexingState(runtime.db)
-    const busy = indexStatus.running || indexStatus.queuedJobs > 0 || Boolean(indexStatus.workerPid) || !['ready', 'fts_only', 'failed'].includes(embeddingStatus) || embeddingStats.missingEmbeddings > 0 || Boolean(indexStatus.degradedWarning)
+    const degraded = Boolean(indexStatus.degradedWarning)
+    const busy = !degraded && (
+      indexStatus.running ||
+      indexStatus.queuedJobs > 0 ||
+      Boolean(indexStatus.workerPid) ||
+      !['ready', 'fts_only', 'failed'].includes(embeddingStatus) ||
+      embeddingStats.missingEmbeddings > 0
+    )
     if (!busy) {
       this.onLayout?.({ visible: false, height: 0 })
       this.cachedWidth = undefined
@@ -90,7 +97,6 @@ export class CodeIntelligenceProgressWidget implements Component {
     if (backendLine) bodyLines.push(` ○ ${backendLine}`)
     const statusLine = formatEmbeddingStatusLine(embeddingStatus, embeddingStats.missingEmbeddings)
     if (statusLine) bodyLines.push(` ○ ${statusLine}`)
-    if (indexStatus.degradedWarning) bodyLines.push(` ○ Indexing disabled: SQLite native module unavailable`)
 
     const lines = renderStatusCard(
       {
