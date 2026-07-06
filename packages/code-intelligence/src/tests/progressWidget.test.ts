@@ -5,19 +5,55 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { DEFAULT_CONFIG } from '../config.ts'
 import { openCodeIntelligenceDb } from '../db/connection.ts'
-import { CodeIntelligenceProgressWidget, formatEmbeddingBackendLine, formatEmbeddingDeviceLine, formatEmbeddingDownloadLine, formatEmbeddingProviderLabel, formatEmbeddingStatusLine, formatEmbeddingThroughputLine, formatFileProgress, isEmbeddingWorkVisible, isFileWorkVisible } from '../pi/progressWidget.ts'
+import { CodeIntelligenceProgressWidget, formatEmbeddingBackendLine, formatEmbeddingDeviceLine, formatEmbeddingDownloadLine, formatEmbeddingProviderLabel, formatEmbeddingStatusLine, formatEmbeddingThroughputLine, formatFileProgress, isActiveEmbeddingStatus, isCodeIntelligenceBusy, isEmbeddingWorkVisible, isFileWorkVisible } from '../pi/progressWidget.ts'
+import { isIndexProgressStale } from '../db/repositories/indexingStateRepo.ts'
 
 describe('code intelligence progress widget', () => {
   it('does not show incremental changed-file progress as a fraction of the whole repo', () => {
-    assert.equal(formatFileProgress('changedFilesIndex', 2, 2000), 'Changed files 2')
+    assert.equal(formatFileProgress('changedFilesIndex', undefined, 2, 2000), 'Changed files 2')
   })
 
   it('shows full repo indexing as processed over total files', () => {
-    assert.equal(formatFileProgress('fullRepoIndex', 2, 2000), 'Files 2/2000')
+    assert.equal(formatFileProgress('fullRepoIndex', 'chunking', 2, 2000), 'Files 2/2000')
+  })
+
+  it('shows scanning progress before total file count is known', () => {
+    assert.equal(formatFileProgress('fullRepoIndex', 'scanning', 0, 0), 'Scanning repository...')
+    assert.equal(formatFileProgress('fullRepoIndex', 'scanning', 12, 0), 'Scanning • 12 files found')
   })
 
   it('does not show active repo total when job kind is unavailable', () => {
-    assert.equal(formatFileProgress(undefined, 2, 159), 'Files 2')
+    assert.equal(formatFileProgress(undefined, undefined, 2, 159), 'Files 2')
+  })
+
+  it('treats not_started embedding status as idle when indexing is inactive', () => {
+    assert.equal(isActiveEmbeddingStatus('not_started'), false)
+    assert.equal(isCodeIntelligenceBusy({
+      indexRunning: false,
+      queuedJobs: 0,
+      workerActive: false,
+      embeddingStatus: 'not_started',
+      missingEmbeddings: 0,
+    }), false)
+    assert.equal(isCodeIntelligenceBusy({
+      indexRunning: false,
+      queuedJobs: 0,
+      workerActive: true,
+      embeddingStatus: 'not_started',
+      missingEmbeddings: 0,
+    }), true)
+  })
+
+  it('detects stale in-progress indexing state', () => {
+    const now = Date.now()
+    assert.equal(isIndexProgressStale({
+      progress_phase: 'scanning',
+      progress_updated_at: new Date(now - 130_000).toISOString(),
+    } as never, 120_000, now), true)
+    assert.equal(isIndexProgressStale({
+      progress_phase: 'complete',
+      progress_updated_at: new Date(now - 130_000).toISOString(),
+    } as never, 120_000, now), false)
   })
 
   it('shows file and embedding progress as separate conditional lines', () => {
@@ -68,6 +104,7 @@ describe('code intelligence progress widget', () => {
           getStatus: () => ({
             running: false,
             queuedJobs,
+            workerProgressStale: false,
             stats: { activeFiles: 0, totalFiles: 0 },
           }),
         },

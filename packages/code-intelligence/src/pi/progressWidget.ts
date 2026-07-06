@@ -44,13 +44,14 @@ export class CodeIntelligenceProgressWidget implements Component {
     const embeddingStats = getEmbeddingStats(runtime.db, runtime.identity.repoKey)
     const indexingState = getIndexingState(runtime.db)
     const degraded = Boolean(indexStatus.degradedWarning)
-    const busy = !degraded && (
-      indexStatus.running ||
-      indexStatus.queuedJobs > 0 ||
-      Boolean(indexStatus.workerPid) ||
-      !['ready', 'fts_only', 'failed'].includes(embeddingStatus) ||
-      embeddingStats.missingEmbeddings > 0
-    )
+    const workerActive = Boolean(indexStatus.workerPid) && !indexStatus.workerProgressStale
+    const busy = !degraded && isCodeIntelligenceBusy({
+      indexRunning: indexStatus.running,
+      queuedJobs: indexStatus.queuedJobs,
+      workerActive,
+      embeddingStatus,
+      missingEmbeddings: embeddingStats.missingEmbeddings,
+    })
     if (!busy) {
       this.onLayout?.({ visible: false, height: 0 })
       this.cachedWidth = undefined
@@ -59,8 +60,8 @@ export class CodeIntelligenceProgressWidget implements Component {
     }
 
     const theme = this.getTheme?.()
-    const worker = indexStatus.workerPid ? `worker ${indexStatus.workerPid}` : indexStatus.queuedJobs > 0 ? 'queued' : 'pending'
-    const action = indexStatus.queuedJobs > 0 && !indexStatus.running && !indexStatus.workerPid ? 'Queued' : 'Indexing'
+    const worker = workerActive ? `worker ${indexStatus.workerPid}` : indexStatus.queuedJobs > 0 ? 'queued' : 'pending'
+    const action = indexStatus.queuedJobs > 0 && !indexStatus.running && !workerActive ? 'Queued' : 'Indexing'
     const pct = embeddingStats.totalEmbeddableChunks > 0
       ? `${Math.round((embeddingStats.embeddedChunks / embeddingStats.totalEmbeddableChunks) * 100)}%`
       : '0%'
@@ -68,8 +69,13 @@ export class CodeIntelligenceProgressWidget implements Component {
       ` → ${action} • ${worker}`,
       ` ○ Phase ${indexingState?.progress_phase ?? 'pending'}${indexingState?.progress_current_path ? ` • ${indexingState.progress_current_path}` : ''}`,
     ]
-    if (isFileWorkVisible(indexStatus.currentJobKind, indexStatus.running, indexStatus.queuedJobs)) {
-      bodyLines.push(` ○ ${formatFileProgress(indexStatus.currentJobKind, indexingState?.progress_files_scanned ?? indexStatus.stats.activeFiles ?? 0, indexStatus.stats.totalFiles)}`)
+    if (isFileWorkVisible(indexStatus.currentJobKind, indexStatus.running, indexStatus.queuedJobs, workerActive)) {
+      bodyLines.push(` ○ ${formatFileProgress(
+        indexStatus.currentJobKind,
+        indexingState?.progress_phase,
+        indexingState?.progress_files_scanned ?? indexStatus.stats.activeFiles ?? 0,
+        indexStatus.stats.totalFiles
+      )}`)
     }
     if (isEmbeddingWorkVisible(embeddingStatus, embeddingStats.missingEmbeddings)) {
       const throughput = formatEmbeddingThroughputLine(storedEmbeddingStatus?.embedding_rate_per_second, storedEmbeddingStatus?.embedding_eta_seconds)
@@ -84,13 +90,13 @@ export class CodeIntelligenceProgressWidget implements Component {
       progress: storedEmbeddingStatus?.download_progress ?? embeddingService?.downloadProgress,
     })
     if (downloadLine) bodyLines.push(` ○ ${downloadLine}`)
-    const workerActive = Boolean(indexStatus.workerPid)
+    const workerActiveForBackend = workerActive
     const backendLine = formatEmbeddingBackendLine({
-      kind: resolveWidgetBackendKind(workerActive, storedEmbeddingStatus?.provider, embeddingService?.kind, runtime.config.embedding.provider),
+      kind: resolveWidgetBackendKind(workerActiveForBackend, storedEmbeddingStatus?.provider, embeddingService?.kind, runtime.config.embedding.provider),
       storedProvider: storedEmbeddingStatus?.provider,
       activeDevice: storedEmbeddingStatus?.active_device ?? embeddingService?.activeDevice,
       configuredDevice: runtime.config.embedding.provider === 'local' ? runtime.config.embedding.device : undefined,
-      modelId: workerActive
+      modelId: workerActiveForBackend
         ? storedEmbeddingStatus?.active_model ?? embeddingService?.modelId
         : embeddingService?.modelId ?? storedEmbeddingStatus?.active_model,
     })
@@ -119,7 +125,31 @@ export class CodeIntelligenceProgressWidget implements Component {
   }
 }
 
-export function formatFileProgress(jobKind: string | undefined, processedFiles: number, totalFiles: number | undefined): string {
+export function isActiveEmbeddingStatus(embeddingStatus: string): boolean {
+  return !['ready', 'fts_only', 'failed', 'not_started'].includes(embeddingStatus)
+}
+
+export function isCodeIntelligenceBusy(input: {
+  indexRunning: boolean
+  queuedJobs: number
+  workerActive: boolean
+  embeddingStatus: string
+  missingEmbeddings: number
+}): boolean {
+  const indexingActive = input.indexRunning || input.queuedJobs > 0 || input.workerActive
+  const embeddingActive = input.missingEmbeddings > 0 || isActiveEmbeddingStatus(input.embeddingStatus)
+  return indexingActive || embeddingActive
+}
+
+export function formatFileProgress(
+  jobKind: string | undefined,
+  progressPhase: string | null | undefined,
+  processedFiles: number,
+  totalFiles: number | undefined
+): string {
+  if (progressPhase === 'scanning' && (totalFiles ?? 0) === 0) {
+    return processedFiles > 0 ? `Scanning • ${processedFiles} files found` : 'Scanning repository...'
+  }
   if (jobKind === 'fullRepoIndex') return `Files ${processedFiles}/${totalFiles ?? '?'}`
   if (jobKind === 'changedFilesIndex') return `Changed files ${processedFiles}`
   if (jobKind === 'deletedFileCleanup') return `Deleted files ${processedFiles}`
@@ -127,8 +157,8 @@ export function formatFileProgress(jobKind: string | undefined, processedFiles: 
   return `Files ${processedFiles}`
 }
 
-export function isFileWorkVisible(jobKind: string | undefined, running: boolean, queuedJobs: number): boolean {
-  return jobKind !== 'embeddingBackfill' && (running || queuedJobs > 0)
+export function isFileWorkVisible(jobKind: string | undefined, running: boolean, queuedJobs: number, workerActive = running || queuedJobs > 0): boolean {
+  return jobKind !== 'embeddingBackfill' && (running || queuedJobs > 0 || workerActive)
 }
 
 export function isEmbeddingWorkVisible(embeddingStatus: string, missingEmbeddings: number): boolean {

@@ -33,7 +33,7 @@ import { findSourceTestCounterparts, retrievePlanningContextPack, formatPlanning
 import { buildPlanCommandPrompt } from './pi/planCommand.ts'
 import { formatIndexedChangeAnalysis, formatReviewModelRoutingForPrompt, normalizeReviewFocus, renderReviewCodeIntelligenceContext, resolveReviewChangedFiles, resolveReviewModelRouting, retrieveReviewCodeIntelligence, selectWholeRepoReviewFiles, type ReviewCodeIntelligenceResult, type ResolvedReviewModelRouting } from './pi/reviewContext.ts'
 import { ensureCodeIntelligenceInstall, formatInstallStatus } from './lifecycle/install.ts'
-import { CodeIntelligenceProgressWidget } from './pi/progressWidget.ts'
+import { CodeIntelligenceProgressWidget, isCodeIntelligenceBusy } from './pi/progressWidget.ts'
 import { CodeIntelligenceDashboardComponent } from './pi/statusTui.ts'
 import { packageKeyForPath } from './repo/packageDetection.ts'
 import { resolveRepoStorageDir } from './repo/storage.ts'
@@ -1595,6 +1595,10 @@ async function recoverInterruptedWork(
 ): Promise<void> {
   if (!runtime) return
   const status = runtime.indexScheduler.getStatus()
+  if (status.workerProgressStale || (status.workerPid && !status.running && status.queuedJobs === 0)) {
+    const reconciled = await runtime.indexScheduler.reconcileStalledIndexing(reason)
+    if (reconciled) return
+  }
   if (status.queuedJobs > 0 && !status.running && !status.workerPid) {
     logger.info('kicking stalled code-intelligence queue', {
       repoKey: runtime.identity.repoKey,
@@ -1604,7 +1608,7 @@ async function recoverInterruptedWork(
     runtime.indexScheduler.kick()
     return
   }
-  if (status.running || status.workerPid) return
+  if (status.running || (status.workerPid && !status.workerProgressStale)) return
 
   const now = Date.now()
   if (!force && progressUiState.recoveryTimer && now - progressUiState.recoveryTimer.lastAttemptAt < RECOVERY_RETRY_MS) return
@@ -1831,7 +1835,15 @@ function updateProgressStatus(ctx: any, runtime: CodeIntelligenceRuntime | undef
   const embeddingService = runtime.services.get<EmbeddingService>('embeddingService')
   const dbEmbeddingStatus = getEmbeddingStatus(runtime.db)
   const embeddingStatus = dbEmbeddingStatus?.status ?? embeddingService?.status ?? 'not_started'
-  const busy = Boolean(indexStatus.workerPid) || indexStatus.running || indexStatus.queuedJobs > 0 || !['ready', 'fts_only', 'failed'].includes(embeddingStatus)
+  const embeddingStats = getEmbeddingStats(runtime.db, runtime.identity.repoKey)
+  const workerActive = Boolean(indexStatus.workerPid) && !indexStatus.workerProgressStale
+  const busy = isCodeIntelligenceBusy({
+    indexRunning: indexStatus.running,
+    queuedJobs: indexStatus.queuedJobs,
+    workerActive,
+    embeddingStatus,
+    missingEmbeddings: embeddingStats.missingEmbeddings,
+  })
   const value = indexStatus.degradedWarning
     ? 'intelligence: disabled (sqlite module unavailable)'
     : busy

@@ -30,6 +30,16 @@ export type ScanResult = {
   summary: ScanSummary
 }
 
+export type ScanProgressUpdate = {
+  currentPath?: string
+  discoveredFiles: number
+  scannedFiles: number
+}
+
+export type ScanRepoFilesOptions = {
+  onProgress?: (update: ScanProgressUpdate) => void
+}
+
 export async function scanSingleFile(
   repoRoot: string,
   relativePath: string,
@@ -46,7 +56,11 @@ export async function scanSingleFile(
   return scanKnownFile(repoRoot, normalizedRelativePath, absolutePath, fileStat.size, config)
 }
 
-export async function scanRepoFiles(repoRoot: string, config: CodeIntelligenceConfig): Promise<ScanResult> {
+export async function scanRepoFiles(
+  repoRoot: string,
+  config: CodeIntelligenceConfig,
+  options: ScanRepoFilesOptions = {}
+): Promise<ScanResult> {
   const files: ScannedFile[] = []
   const summary: ScanSummary = {
     scanned: 0,
@@ -56,11 +70,30 @@ export async function scanRepoFiles(repoRoot: string, config: CodeIntelligenceCo
     skippedIgnored: 0,
   }
 
+  const progress = { discoveredFiles: 0, scannedFiles: 0 }
+  const reportProgress = (currentPath?: string) => {
+    options.onProgress?.({
+      currentPath,
+      discoveredFiles: progress.discoveredFiles,
+      scannedFiles: progress.scannedFiles,
+    })
+  }
+
   let visitedEntries = 0
-  await walkDirectory(repoRoot, '', config, files, summary, createScanLimiter(config.indexing.scanConcurrency), () => {
-    visitedEntries += 1
-    return visitedEntries
-  })
+  await walkDirectory(
+    repoRoot,
+    '',
+    config,
+    files,
+    summary,
+    createScanLimiter(config.indexing.scanConcurrency),
+    () => {
+      visitedEntries += 1
+      return visitedEntries
+    },
+    progress,
+    reportProgress
+  )
   files.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
   return { files, summary }
 }
@@ -83,10 +116,13 @@ async function walkDirectory(
   files: ScannedFile[],
   summary: ScanSummary,
   scanLimiter: ScanLimiter,
-  nextVisitedCount: () => number
+  nextVisitedCount: () => number,
+  progress: { discoveredFiles: number; scannedFiles: number },
+  reportProgress: (currentPath?: string) => void
 ): Promise<void> {
   const absoluteDir = join(repoRoot, relativeDir)
   const entries = await readdir(absoluteDir, { withFileTypes: true })
+  reportProgress(relativeDir || undefined)
 
   for (const entry of entries) {
     if (nextVisitedCount() % 50 === 0) await yieldToEventLoop()
@@ -98,7 +134,7 @@ async function walkDirectory(
         summary.skippedIgnored += 1
         continue
       }
-      await walkDirectory(repoRoot, relativePath, config, files, summary, scanLimiter, nextVisitedCount)
+      await walkDirectory(repoRoot, relativePath, config, files, summary, scanLimiter, nextVisitedCount, progress, reportProgress)
       continue
     }
 
@@ -123,6 +159,9 @@ async function walkDirectory(
       continue
     }
 
+    progress.discoveredFiles += 1
+    reportProgress(relativePath)
+
     void scanLimiter.run(async () => {
       const scanned = await scanKnownFile(repoRoot, relativePath, absolutePath, fileStat.size, config)
       if (!scanned) {
@@ -132,6 +171,8 @@ async function walkDirectory(
       }
       files.push(scanned)
       summary.scanned += 1
+      progress.scannedFiles += 1
+      reportProgress(relativePath)
     })
   }
 

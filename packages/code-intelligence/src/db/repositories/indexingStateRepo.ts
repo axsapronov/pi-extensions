@@ -33,6 +33,18 @@ export function markIncrementalIndexCompleted(db: CodeIntelligenceDb, repoKey: s
     .run()
 }
 
+export function isIndexProgressStale(
+  state: ReturnType<typeof getIndexingState>,
+  maxAgeMs: number,
+  now = Date.now()
+): boolean {
+  if (!state?.progress_phase || state.progress_phase === 'complete') return false
+  if (!state.progress_updated_at) return false
+  const updatedAt = Date.parse(state.progress_updated_at)
+  if (!Number.isFinite(updatedAt)) return false
+  return now - updatedAt > maxAgeMs
+}
+
 export function getIndexingState(db: CodeIntelligenceDb) {
   const row = db.select().from(indexingState).where(eq(indexingState.id, 1)).get()
   return row

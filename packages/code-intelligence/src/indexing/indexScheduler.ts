@@ -12,7 +12,7 @@ import { deleteEntitiesForFilePaths, findEntitiesByName, listEntitiesForPath, re
 import { deleteCodeRelationshipsForFilePaths, listIncomingCodeRelationshipsForPath, replaceCodeRelationshipsForFile } from '../db/repositories/relationshipsRepo.ts'
 import { deleteFileRelationshipsForFilePaths, listIncomingFileRelationshipsForPath, replaceFileRelationshipsForFile } from '../db/repositories/fileRelationshipsRepo.ts'
 import { findActiveFilePaths, findMissingActiveFilePaths, getFileIndexStats, markFileDeleted, markMissingFilesDeleted, pruneDeletedFileRows, upsertIndexedFile } from '../db/repositories/filesRepo.ts'
-import { markFullIndexCompleted, markIncrementalIndexCompleted, updateIndexProgress } from '../db/repositories/indexingStateRepo.ts'
+import { markFullIndexCompleted, markIncrementalIndexCompleted, updateIndexProgress, getIndexingState, isIndexProgressStale } from '../db/repositories/indexingStateRepo.ts'
 import { embedChunksIncremental } from '../embeddings/embeddingIndexer.ts'
 import type { EmbeddingService } from '../embeddings/EmbeddingService.ts'
 import { yieldToEventLoop } from '../lib/async.ts'
@@ -76,6 +76,8 @@ const WORKER_PROCESS_POLL_MS = 250
 const DELETED_FILE_PRUNE_AGE_MS = 30 * 24 * 60 * 60 * 1000
 const WORKER_START_LOCK_DIR = 'worker-start.lock'
 const MAX_INCREMENTAL_DEPENDENCY_REFRESH_FILES = 50
+export const STALE_INDEX_PROGRESS_MS = 120_000
+const STALE_WORKER_WAIT_MS = 300_000
 
 export type WorkerProcessInfo = {
   pid: number
@@ -239,16 +241,49 @@ export class IndexScheduler {
 
   getStatus() {
     const stats = getFileIndexStats(this.options.db, this.options.identity.repoKey)
+    const indexingState = getIndexingState(this.options.db)
+    const workerProgressStale = isIndexProgressStale(indexingState, STALE_INDEX_PROGRESS_MS)
     return {
       running: this.running,
       queuedJobs: this.queue.length,
       workerPid: this.currentWorker?.pid ?? this.externalWorkerPid,
+      workerProgressStale,
       currentJobKind: this.currentJobKind,
       lastFullIndexResult: this.lastFullIndexResult,
       lastIncrementalIndexResult: this.lastIncrementalIndexResult,
       degradedWarning: this.degradedWarning,
       stats,
     }
+  }
+
+  async reconcileStalledIndexing(reason: string): Promise<boolean> {
+    const indexingState = getIndexingState(this.options.db)
+    const stale = isIndexProgressStale(indexingState, STALE_INDEX_PROGRESS_MS)
+    const workerPid = this.currentWorker?.pid ?? this.externalWorkerPid
+    if (!stale && !workerPid) return false
+
+    const externalPids = await listCodeIntelligenceWorkerPids(this.options.identity.repoKey, {
+      excludePids: this.currentWorker?.pid ? [this.currentWorker.pid] : [],
+      logger: this.options.logger,
+    })
+    const stalledPids = [...new Set([workerPid, ...externalPids].filter((pid): pid is number => Number.isFinite(pid)))]
+    if (stalledPids.length === 0 && !stale) return false
+
+    this.options.logger.warn('reconciling stalled code-intelligence indexing', {
+      repoKey: this.options.identity.repoKey,
+      reason,
+      stale,
+      phase: indexingState?.progress_phase,
+      progressUpdatedAt: indexingState?.progress_updated_at,
+      workerPids: stalledPids,
+      running: this.running,
+      queuedJobs: this.queue.length,
+    })
+    await this.cancelActiveWorker()
+    for (const pid of externalPids) safeKill(pid, 'SIGKILL')
+    this.externalWorkerPid = undefined
+    if (!this.stopped && this.queue.length > 0) this.kick()
+    return true
   }
 
   kick(): void {
@@ -400,10 +435,26 @@ export class IndexScheduler {
   }
 
   private async waitForWorkerSlot(): Promise<void> {
+    const started = Date.now()
     while (!this.stopped && this.queue.length > 0) {
       await this.cleanupLegacyLockDir()
+      const indexingState = getIndexingState(this.options.db)
+      if (isIndexProgressStale(indexingState, STALE_INDEX_PROGRESS_MS)) {
+        await this.reconcileStalledIndexing('stale progress while waiting for worker slot')
+        return
+      }
       const pid = await this.findExternalWorkerPid()
       if (!pid) {
+        this.externalWorkerPid = undefined
+        return
+      }
+      if (Date.now() - started > STALE_WORKER_WAIT_MS) {
+        this.options.logger.warn('timed out waiting for external code-intelligence worker; terminating', {
+          repoKey: this.options.identity.repoKey,
+          pid,
+          waitedMs: Date.now() - started,
+        })
+        safeKill(pid, 'SIGKILL')
         this.externalWorkerPid = undefined
         return
       }
@@ -824,7 +875,19 @@ export async function runFullRepoIndex(options: {
   const progress = new ProgressThrottler(options)
   progress.force({ phase: 'scanning', filesScanned: 0, startedAt })
 
-  const scan = await scanRepoFiles(options.identity.gitRoot, options.config)
+  const scan = await scanRepoFiles(options.identity.gitRoot, options.config, {
+    onProgress: (update) => {
+      progress.maybe(
+        {
+          phase: 'scanning',
+          currentPath: update.currentPath ?? null,
+          filesScanned: update.scannedFiles,
+          startedAt,
+        },
+        update.scannedFiles
+      )
+    },
+  })
   const seenPaths = new Set<string>()
   const stats = { insertedOrChanged: 0, skippedUnchanged: 0, generated: 0, chunksIndexed: 0, entitiesExtracted: 0, relationshipsExtracted: 0 }
   const insertedChunksForEmbedding: InsertedChunk[] = []
