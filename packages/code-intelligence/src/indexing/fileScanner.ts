@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { lstat, readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { CodeIntelligenceConfig } from '../config.ts'
 import { detectGeneratedFile, type GeneratedDetection } from './generated.ts'
@@ -6,6 +6,7 @@ import { matchesAnyGlob, normalizeRelativePath } from './glob.ts'
 import { sha256Buffer } from './hash.ts'
 import { yieldToEventLoop } from '../lib/async.ts'
 import { detectLanguage, isLikelyBinaryBuffer, isLikelyBinaryPath } from './language.ts'
+import { isPathInsideRepo } from './repoScope.ts'
 
 export type ScannedFile = {
   absolutePath: string
@@ -48,8 +49,12 @@ export async function scanSingleFile(
   const normalizedRelativePath = normalizeRelativePath(relativePath)
   const absolutePath = join(repoRoot, normalizedRelativePath)
 
+  if (!isPathInsideRepo(repoRoot, absolutePath)) return undefined
   if (!shouldIncludePath(normalizedRelativePath, config)) return undefined
   if (isLikelyBinaryPath(normalizedRelativePath)) return undefined
+
+  const linkStat = await lstat(absolutePath).catch(() => undefined)
+  if (!linkStat || linkStat.isSymbolicLink()) return undefined
 
   const fileStat = await stat(absolutePath)
   if (!fileStat.isFile()) return undefined
@@ -128,6 +133,16 @@ async function walkDirectory(
     if (nextVisitedCount() % 50 === 0) await yieldToEventLoop()
     const relativePath = normalizeRelativePath(join(relativeDir, entry.name))
     const absolutePath = join(repoRoot, relativePath)
+
+    if (entry.isSymbolicLink()) {
+      summary.skippedIgnored += 1
+      continue
+    }
+
+    if (!isPathInsideRepo(repoRoot, absolutePath)) {
+      summary.skippedIgnored += 1
+      continue
+    }
 
     if (entry.isDirectory()) {
       if (shouldPruneDirectory(relativePath, config)) {

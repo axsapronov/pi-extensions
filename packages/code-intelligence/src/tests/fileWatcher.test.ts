@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import type { Stats } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { DEFAULT_CONFIG } from '../config.ts'
@@ -18,12 +19,12 @@ function testConfig(overrides: { include?: string[]; exclude?: string[] } = {}) 
   }
 }
 
-function dirStats(): { isDirectory: () => true; isFile: () => false } {
-  return { isDirectory: () => true, isFile: () => false }
+function dirStats(): Stats {
+  return { isDirectory: () => true, isFile: () => false } as Stats
 }
 
-function fileStats(): { isDirectory: () => false; isFile: () => true } {
-  return { isDirectory: () => false, isFile: () => true }
+function fileStats(): Stats {
+  return { isDirectory: () => false, isFile: () => true } as Stats
 }
 
 describe('fileWatcher', () => {

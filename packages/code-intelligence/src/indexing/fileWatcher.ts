@@ -1,17 +1,12 @@
-import { relative } from 'node:path'
 import type { Stats } from 'node:fs'
 import chokidar, { type FSWatcher } from 'chokidar'
 import type { CodeIntelligenceConfig } from '../config.ts'
 import type { CodeIntelligenceLogger } from '../logger.ts'
-import { normalizeRelativePath } from './glob.ts'
 import { shouldIncludePath, shouldPruneDirectory } from './fileScanner.ts'
+import { pathToRepoRelative, watchPathToRelative } from './repoScope.ts'
 import type { IndexScheduler } from './indexScheduler.ts'
 
-export function watchPathToRelative(repoRoot: string, path: string): string | undefined {
-  const rel = normalizeRelativePath(relative(repoRoot, path))
-  if (!rel || rel.startsWith('..')) return undefined
-  return rel
-}
+export { watchPathToRelative } from './repoScope.ts'
 
 export function shouldIgnoreWatchPath(
   path: string,
@@ -19,7 +14,7 @@ export function shouldIgnoreWatchPath(
   repoRoot: string,
   config: Pick<CodeIntelligenceConfig, 'include' | 'exclude'>
 ): boolean {
-  const rel = watchPathToRelative(repoRoot, path)
+  const rel = pathToRepoRelative(repoRoot, path)
   if (!rel) return true
   if (stats?.isDirectory()) return shouldPruneDirectory(rel, config)
   return !shouldIncludePath(rel, config)
