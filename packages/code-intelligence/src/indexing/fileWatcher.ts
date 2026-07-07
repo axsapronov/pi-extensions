@@ -1,10 +1,46 @@
 import { relative } from 'node:path'
+import type { Stats } from 'node:fs'
 import chokidar, { type FSWatcher } from 'chokidar'
 import type { CodeIntelligenceConfig } from '../config.ts'
 import type { CodeIntelligenceLogger } from '../logger.ts'
 import { normalizeRelativePath } from './glob.ts'
 import { shouldIncludePath, shouldPruneDirectory } from './fileScanner.ts'
 import type { IndexScheduler } from './indexScheduler.ts'
+
+export function watchPathToRelative(repoRoot: string, path: string): string | undefined {
+  const rel = normalizeRelativePath(relative(repoRoot, path))
+  if (!rel || rel.startsWith('..')) return undefined
+  return rel
+}
+
+export function shouldIgnoreWatchPath(
+  path: string,
+  stats: Stats | undefined,
+  repoRoot: string,
+  config: Pick<CodeIntelligenceConfig, 'include' | 'exclude'>
+): boolean {
+  const rel = watchPathToRelative(repoRoot, path)
+  if (!rel) return true
+  if (stats?.isDirectory()) return shouldPruneDirectory(rel, config)
+  return !shouldIncludePath(rel, config)
+}
+
+export function createFileWatcherOptions(
+  repoRoot: string,
+  config: Pick<CodeIntelligenceConfig, 'include' | 'exclude'>
+) {
+  return {
+    ignoreInitial: true,
+    persistent: true,
+    followSymlinks: false,
+    ignorePermissionErrors: true,
+    ignored: (path: string, stats?: Stats) => shouldIgnoreWatchPath(path, stats, repoRoot, config),
+    awaitWriteFinish: {
+      stabilityThreshold: 300,
+      pollInterval: 100,
+    },
+  }
+}
 
 export class CodeIntelligenceFileWatcher {
   private watcher: FSWatcher | undefined
@@ -26,20 +62,8 @@ export class CodeIntelligenceFileWatcher {
   start(): void {
     if (this.watcher) return
 
-    this.watcher = chokidar.watch(this.options.repoRoot, {
-      ignoreInitial: true,
-      persistent: true,
-      ignored: (path, stats) => {
-        const rel = this.toRelative(path)
-        if (!rel) return false
-        if (stats?.isDirectory()) return shouldPruneDirectory(rel, this.options.config)
-        return !shouldIncludePath(rel, this.options.config)
-      },
-      awaitWriteFinish: {
-        stabilityThreshold: 300,
-        pollInterval: 100,
-      },
-    })
+    const { repoRoot, config } = this.options
+    this.watcher = chokidar.watch(repoRoot, createFileWatcherOptions(repoRoot, config))
 
     this.watcher.on('add', (path) => this.queueChanged(path))
     this.watcher.on('change', (path) => this.queueChanged(path))
@@ -69,7 +93,7 @@ export class CodeIntelligenceFileWatcher {
   }
 
   private queueChanged(path: string): void {
-    const rel = this.toRelative(path)
+    const rel = watchPathToRelative(this.options.repoRoot, path)
     if (!rel) return
     this.deleted.delete(rel)
     this.changed.add(rel)
@@ -77,7 +101,7 @@ export class CodeIntelligenceFileWatcher {
   }
 
   private queueDeleted(path: string): void {
-    const rel = this.toRelative(path)
+    const rel = watchPathToRelative(this.options.repoRoot, path)
     if (!rel) return
     this.changed.delete(rel)
     this.deleted.add(rel)
@@ -102,11 +126,5 @@ export class CodeIntelligenceFileWatcher {
 
     if (changed.length > 0) this.options.indexScheduler.enqueueChangedFiles(changed, 'file watcher')
     if (deleted.length > 0) this.options.indexScheduler.enqueueDeletedFiles(deleted, 'file watcher')
-  }
-
-  private toRelative(path: string): string | undefined {
-    const rel = normalizeRelativePath(relative(this.options.repoRoot, path))
-    if (!rel || rel.startsWith('..')) return undefined
-    return rel
   }
 }

@@ -144,6 +144,10 @@ Disables embeddings entirely; retrieval falls back to full-text search only.
 - `autoEnable` — when `true`, enable code intelligence automatically on session start (default `false`).
 - `indexing.include` / `indexing.exclude` — glob patterns to control which files are indexed.
 
+### Windows file watcher
+
+The repository file watcher is scoped to the git root. Symlinks are not followed, and permission errors (`EPERM` / `EACCES`) on protected system folders are ignored so Pi does not crash when Windows blocks access to paths such as `AppData\Local\ElevatedDiagnostics`.
+
 ## Runtime dependencies
 
 This package is self-contained.
